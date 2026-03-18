@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CryptoTX &#x2593; Transaction Explorer</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── CRT / retro palette ──────────────────────────────────────────── */
+    :root {
+      --bg:          #0a0a0f;
+      --bg2:         #0f0f1a;
+      --border:      #1a3a1a;
+      --glow-green:  #00ff41;
+      --dim-green:   #007a1e;
+      --amber:       #ffb000;
+      --red:         #ff4444;
+      --cyan:        #00eeff;
+      --text:        #c8ffc8;
+      --muted:       #4a7a4a;
+      --panel:       #0d1a0d;
+      --font:        'Courier New', Courier, monospace;
+    }
+
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── CRT scanline overlay ─────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0,0,0,0.18) 3px,
+        rgba(0,0,0,0.18) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    /* ── CRT vignette ─────────────────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.72) 100%);
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    /* ── Glow helpers ─────────────────────────────────────────────────── */
+    .glow  { text-shadow: 0 0 6px var(--glow-green), 0 0 14px var(--glow-green); }
+    .amber { color: var(--amber); text-shadow: 0 0 6px var(--amber); }
+    .cyan  { color: var(--cyan);  text-shadow: 0 0 6px var(--cyan); }
+    .red   { color: var(--red);   text-shadow: 0 0 6px var(--red); }
+    .muted { color: var(--muted); }
+
+    /* ── Page wrapper ─────────────────────────────────────────────────── */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
+      text-align: center;
+      padding: 32px 0 24px;
+      border-bottom: 1px solid var(--dim-green);
+      margin-bottom: 32px;
+    }
+
+    .logo {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--glow-green);
+      text-shadow: 0 0 8px var(--glow-green), 0 0 24px var(--glow-green);
+      user-select: none;
+    }
+
+    .logo span { color: var(--amber); text-shadow: 0 0 8px var(--amber); }
+
+    .tagline {
+      margin-top: 6px;
+      font-size: 0.78rem;
+      letter-spacing: 0.22em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* ── Blink cursor ─────────────────────────────────────────────────── */
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .cursor::after {
+      content: '█';
+      animation: blink 1s step-end infinite;
+      color: var(--glow-green);
+    }
+
+    /* ── Search panel ─────────────────────────────────────────────────── */
+    .search-panel {
+      background: var(--panel);
+      border: 1px solid var(--dim-green);
+      border-radius: 4px;
+      padding: 24px;
+      box-shadow: 0 0 18px rgba(0,255,65,0.07), inset 0 0 8px rgba(0,0,0,0.6);
+      margin-bottom: 28px;
+    }
+
+    .section-label {
+      font-size: 0.68rem;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    .section-label::before { content: '>> '; color: var(--dim-green); }
+
+    /* Chain selector */
+    .chain-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .chain-btn {
+      background: transparent;
+      border: 1px solid var(--dim-green);
+      color: var(--muted);
+      font-family: var(--font);
+      font-size: 0.78rem;
+      letter-spacing: 0.12em;
+      padding: 5px 14px;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.15s;
+      text-transform: uppercase;
+    }
+
+    .chain-btn:hover {
+      border-color: var(--glow-green);
+      color: var(--glow-green);
+      box-shadow: 0 0 8px rgba(0,255,65,0.25);
+    }
+
+    .chain-btn.active {
+      background: rgba(0,255,65,0.08);
+      border-color: var(--glow-green);
+      color: var(--glow-green);
+      box-shadow: 0 0 10px rgba(0,255,65,0.3);
+    }
+
+    /* Hash input row */
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .hash-input {
+      flex: 1;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--dim-green);
+      border-radius: 2px;
+      color: var(--glow-green);
+      font-family: var(--font);
+      font-size: 0.88rem;
+      padding: 10px 14px;
+      outline: none;
+      letter-spacing: 0.04em;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .hash-input::placeholder { color: var(--muted); opacity: 0.6; }
+
+    .hash-input:focus {
+      border-color: var(--glow-green);
+      box-shadow: 0 0 12px rgba(0,255,65,0.2);
+    }
+
+    .btn {
+      background: transparent;
+      border: 1px solid var(--dim-green);
+      color: var(--glow-green);
+      font-family: var(--font);
+      font-size: 0.82rem;
+      letter-spacing: 0.12em;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 2px;
+      text-transform: uppercase;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      border-color: var(--glow-green);
+      box-shadow: 0 0 8px rgba(0,255,65,0.2);
+    }
+
+    .btn-primary:hover, .btn-primary:focus {
+      background: rgba(0,255,65,0.12);
+      box-shadow: 0 0 18px rgba(0,255,65,0.4);
+      outline: none;
+    }
+
+    .btn-clear { color: var(--muted); }
+    .btn-clear:hover { border-color: var(--red); color: var(--red); box-shadow: 0 0 8px rgba(255,68,68,0.3); }
+
+    /* ── Sample hashes hint ───────────────────────────────────────────── */
+    .hint {
+      margin-top: 12px;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+
+    .hint-hash {
+      color: var(--dim-green);
+      cursor: pointer;
+      text-decoration: none;
+      transition: color 0.1s;
+      word-break: break-all;
+    }
+
+    .hint-hash:hover { color: var(--glow-green); }
+
+    /* ── Status bar ───────────────────────────────────────────────────── */
+    .status-bar {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      border-bottom: 1px solid rgba(0,255,65,0.08);
+      margin-bottom: 20px;
+      padding-bottom: 8px;
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .status-dot.online { background: var(--glow-green); box-shadow: 0 0 6px var(--glow-green); }
+    .status-dot.loading {
+      background: var(--amber);
+      box-shadow: 0 0 6px var(--amber);
+      animation: blink 0.6s step-end infinite;
+    }
+    .status-dot.error { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+    /* ── Loading spinner ──────────────────────────────────────────────── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-box {
+      display: none;
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--dim-green);
+      letter-spacing: 0.18em;
+      font-size: 0.82rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 32px; height: 32px;
+      border: 2px solid var(--dim-green);
+      border-top-color: var(--glow-green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 14px;
+    }
+
+    /* ── Error box ────────────────────────────────────────────────────── */
+    .error-box {
+      display: none;
+      background: rgba(255,68,68,0.06);
+      border: 1px solid rgba(255,68,68,0.4);
+      border-radius: 3px;
+      padding: 16px 20px;
+      color: var(--red);
+      font-size: 0.84rem;
+      margin-bottom: 20px;
+    }
+
+    .error-box::before { content: '[ERROR] '; font-weight: bold; }
+
+    /* ── Result panels ────────────────────────────────────────────────── */
+    .result-section { display: none; }
+
+    /* Overview card */
+    .tx-overview {
+      background: var(--panel);
+      border: 1px solid var(--dim-green);
+      border-radius: 3px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 14px rgba(0,255,65,0.05);
+    }
+
+    .tx-hash-display {
+      font-size: 0.78rem;
+      word-break: break-all;
+      color: var(--cyan);
+      text-shadow: 0 0 5px var(--cyan);
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .tx-hash-display .label { color: var(--muted); font-size: 0.68rem; display: block; margin-bottom: 2px; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+    }
+
+    .stat-card {
+      background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(0,255,65,0.12);
+      border-radius: 2px;
+      padding: 12px 14px;
+    }
+
+    .stat-label {
+      font-size: 0.62rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: var(--glow-green);
+      text-shadow: 0 0 4px var(--glow-green);
+      word-break: break-all;
+    }
+
+    .stat-value.amber { color: var(--amber); text-shadow: 0 0 4px var(--amber); }
+    .stat-value.cyan  { color: var(--cyan);  text-shadow: 0 0 4px var(--cyan); }
+    .stat-value.red   { color: var(--red);   text-shadow: 0 0 4px var(--red); }
+
+    /* Confirmed badge */
+    .confirmed-badge {
+      display: inline-block;
+      font-size: 0.66rem;
+      letter-spacing: 0.14em;
+      padding: 2px 8px;
+      border-radius: 2px;
+      text-transform: uppercase;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .badge-confirmed { background: rgba(0,255,65,0.12); border: 1px solid var(--dim-green); color: var(--glow-green); }
+    .badge-pending   { background: rgba(255,176,0,0.12); border: 1px solid var(--amber); color: var(--amber); }
+    .badge-unconfirmed { background: rgba(255,68,68,0.1); border: 1px solid var(--red); color: var(--red); }
+
+    /* ── I/O tables ───────────────────────────────────────────────────── */
+    .io-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 600px) {
+      .io-section { grid-template-columns: 1fr; }
+      .input-row  { flex-direction: column; }
+    }
+
+    .io-panel {
+      background: var(--panel);
+      border: 1px solid var(--dim-green);
+      border-radius: 3px;
+      padding: 16px;
+      box-shadow: 0 0 10px rgba(0,255,65,0.04);
+    }
+
+    .io-title {
+      font-size: 0.66rem;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(0,255,65,0.1);
+    }
+
+    .io-title.inputs-title::before  { content: '◄ '; color: var(--amber); }
+    .io-title.outputs-title::before { content: '► '; color: var(--glow-green); }
+
+    .io-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(0,255,65,0.05);
+      font-size: 0.78rem;
+    }
+
+    .io-entry:last-child { border-bottom: none; }
+
+    .io-addr {
+      color: var(--cyan);
+      word-break: break-all;
+      flex: 1;
+      font-size: 0.72rem;
+    }
+
+    .io-addr.coinbase { color: var(--amber); font-style: italic; }
+
+    .io-value {
+      color: var(--glow-green);
+      white-space: nowrap;
+      font-weight: 700;
+      font-size: 0.82rem;
+      text-align: right;
+    }
+
+    /* ── Raw JSON toggle ──────────────────────────────────────────────── */
+    .raw-section {
+      background: var(--panel);
+      border: 1px solid var(--dim-green);
+      border-radius: 3px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .raw-toggle {
+      width: 100%;
+      background: rgba(0,255,65,0.04);
+      border: none;
+      border-bottom: 1px solid rgba(0,255,65,0.1);
+      color: var(--muted);
+      font-family: var(--font);
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      padding: 10px 16px;
+      cursor: pointer;
+      text-align: left;
+      transition: color 0.15s;
+    }
+
+    .raw-toggle:hover { color: var(--glow-green); }
+    .raw-toggle::before { content: '+ '; color: var(--dim-green); }
+    .raw-toggle.open::before { content: '- '; }
+
+    .raw-content {
+      display: none;
+      padding: 16px;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .raw-content.open { display: block; }
+
+    pre {
+      font-family: var(--font);
+      font-size: 0.72rem;
+      color: var(--text);
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* ── Footer ───────────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      font-size: 0.65rem;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      border-top: 1px solid rgba(0,255,65,0.08);
+      padding-top: 20px;
+      text-transform: uppercase;
+    }
+
+    footer a { color: var(--dim-green); text-decoration: none; }
+    footer a:hover { color: var(--glow-green); }
+
+    /* ── Scrollbar ────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--dim-green); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--glow-green); }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">CRYPTO<span>TX</span> <span class="cursor"></span></div>
+    <div class="tagline">Blockchain Transaction Explorer</div>
+  </header>
+
+  <!-- ── Search panel ───────────────────────────────────────────────── -->
+  <section class="search-panel">
+    <div class="section-label">Select Network</div>
+
+    <div class="chain-row" id="chainRow">
+      <button class="chain-btn active" data-chain="btc/main"  data-symbol="BTC"  data-name="Bitcoin">BTC</button>
+      <button class="chain-btn"        data-chain="eth/main"  data-symbol="ETH"  data-name="Ethereum">ETH</button>
+      <button class="chain-btn"        data-chain="ltc/main"  data-symbol="LTC"  data-name="Litecoin">LTC</button>
+      <button class="chain-btn"        data-chain="doge/main" data-symbol="DOGE" data-name="Dogecoin">DOGE</button>
+      <button class="chain-btn"        data-chain="dash/main" data-symbol="DASH" data-name="Dash">DASH</button>
+    </div>
+
+    <div class="section-label">Transaction Hash</div>
+
+    <div class="input-row">
+      <input
+        id="hashInput"
+        class="hash-input"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Enter transaction hash…"
+        aria-label="Transaction hash"
+      />
+      <button class="btn btn-primary" id="lookupBtn" onclick="lookup()">Lookup</button>
+      <button class="btn btn-clear"   id="clearBtn"  onclick="clearAll()">Clear</button>
+    </div>
+
+    <div class="hint" id="sampleHint">
+      Try a sample:
+      <a class="hint-hash" id="sampleLink" href="#" onclick="loadSample(event)">loading…</a>
+    </div>
+  </section>
+
+  <!-- ── Status bar ─────────────────────────────────────────────────── -->
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">READY — SELECT A NETWORK AND ENTER A TRANSACTION HASH</span>
+  </div>
+
+  <!-- ── Loading ────────────────────────────────────────────────────── -->
+  <div class="loading-box" id="loadingBox">
+    <div class="spinner"></div><br/>
+    QUERYING BLOCKCHAIN…
+  </div>
+
+  <!-- ── Error ──────────────────────────────────────────────────────── -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- ── Results ────────────────────────────────────────────────────── -->
+  <div class="result-section" id="resultSection">
+
+    <!-- Overview -->
+    <div class="tx-overview">
+      <div class="tx-hash-display">
+        <span class="label">TRANSACTION HASH</span>
+        <span id="rHash"></span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div class="stat-value" id="rStatus">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Confirmations</div>
+          <div class="stat-value amber" id="rConfirmations">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Block Height</div>
+          <div class="stat-value" id="rBlockHeight">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Timestamp</div>
+          <div class="stat-value cyan" id="rTime">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Value</div>
+          <div class="stat-value" id="rTotal">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Fee</div>
+          <div class="stat-value amber" id="rFee">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Size (bytes)</div>
+          <div class="stat-value" id="rSize">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Inputs / Outputs</div>
+          <div class="stat-value" id="rIO">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inputs / Outputs -->
+    <div class="io-section">
+      <div class="io-panel">
+        <div class="io-title inputs-title">Inputs</div>
+        <div id="inputsList"></div>
+      </div>
+      <div class="io-panel">
+        <div class="io-title outputs-title">Outputs</div>
+        <div id="outputsList"></div>
+      </div>
+    </div>
+
+    <!-- Raw JSON -->
+    <div class="raw-section">
+      <button class="raw-toggle" id="rawToggle" onclick="toggleRaw()">Raw API Response</button>
+      <div class="raw-content" id="rawContent">
+        <pre id="rawPre"></pre>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────────────── -->
+  <footer>
+    Data provided by <a href="https://www.blockcypher.com/" target="_blank" rel="noopener">BlockCypher API</a>
+    &nbsp;|&nbsp; CryptoTX Explorer &copy; 2025
+  </footer>
+
+</div>
+
+<script>
+/* ── Chain config ───────────────────────────────────────────────────── */
+const CHAINS = {
+  'btc/main':  { symbol: 'BTC',  name: 'Bitcoin',  divisor: 1e8,  unit: 'BTC'  },
+  'eth/main':  { symbol: 'ETH',  name: 'Ethereum', divisor: 1e18, unit: 'ETH'  },
+  'ltc/main':  { symbol: 'LTC',  name: 'Litecoin', divisor: 1e8,  unit: 'LTC'  },
+  'doge/main': { symbol: 'DOGE', name: 'Dogecoin', divisor: 1e8,  unit: 'DOGE' },
+  'dash/main': { symbol: 'DASH', name: 'Dash',     divisor: 1e8,  unit: 'DASH' },
+};
+
+/* Real, confirmed transaction hashes used for the "Try a sample" hint.
+   Only chains with a verified hash are included here. */
+const REAL_SAMPLES = {
+  /* Satoshi's first Bitcoin transaction (block 170, Jan 2009) */
+  'btc/main': 'a1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d',
+  /* One of Ethereum's early mainnet transactions */
+  'eth/main': '8f39fb4940c084460da00a876a521ef2ba84ad6ea8d2f5628c9f1f8aeb395342',
+  /* Litecoin genesis-block coinbase */
+  'ltc/main': '97ddfbbae6be97fd6cdf3e7ca13232a3afff2353e29badfab7f73011edd4ced9',
+};
+
+/* ── State ──────────────────────────────────────────────────────────── */
+let activeChain = 'btc/main';
+let currentData = null;
+
+/* ── Init ───────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  updateSampleLink();
+  document.getElementById('hashInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') lookup();
+  });
+});
+
+/* ── Chain selection ────────────────────────────────────────────────── */
+document.getElementById('chainRow').addEventListener('click', e => {
+  const btn = e.target.closest('.chain-btn');
+  if (!btn) return;
+  document.querySelectorAll('.chain-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeChain = btn.dataset.chain;
+  updateSampleLink();
+  clearResults();
+});
+
+function updateSampleLink() {
+  const hash  = REAL_SAMPLES[activeChain];
+  const hint  = document.getElementById('sampleHint');
+  const link  = document.getElementById('sampleLink');
+  if (hash) {
+    hint.style.display = '';
+    link.textContent   = hash.substring(0, 16) + '…';
+    link.dataset.hash  = hash;
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+function loadSample(e) {
+  e.preventDefault();
+  const hash = e.currentTarget.dataset.hash;
+  document.getElementById('hashInput').value = hash;
+  lookup();
+}
+
+/* ── Lookup ─────────────────────────────────────────────────────────── */
+async function lookup() {
+  const hash = document.getElementById('hashInput').value.trim();
+  if (!hash) {
+    showError('Please enter a transaction hash.');
+    return;
+  }
+
+  setStatus('loading', 'QUERYING BLOCKCHAIN…');
+  showLoading(true);
+  hideError();
+  hideResults();
+
+  const cfg = CHAINS[activeChain];
+  const url = `https://api.blockcypher.com/v1/${activeChain}/txs/${hash}?limit=50&includeHex=false`;
+
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    currentData = data;
+    renderResults(data, cfg);
+    setStatus('online', `TX FOUND — BLOCK #${data.block_height ?? 'UNCONFIRMED'} — ${cfg.name.toUpperCase()}`);
+  } catch (err) {
+    showError(`Could not retrieve transaction: ${err.message}`);
+    setStatus('error', 'LOOKUP FAILED');
+  } finally {
+    showLoading(false);
+  }
+}
+
+/* ── Render ─────────────────────────────────────────────────────────── */
+function renderResults(tx, cfg) {
+  /* Hash */
+  document.getElementById('rHash').textContent = tx.hash;
+
+  /* Status */
+  const confs = tx.confirmations ?? 0;
+  const statusEl = document.getElementById('rStatus');
+  if (confs === 0) {
+    statusEl.innerHTML = 'Unconfirmed <span class="confirmed-badge badge-unconfirmed">Pending</span>';
+    statusEl.className = 'stat-value red';
+  } else if (confs < 6) {
+    statusEl.innerHTML = 'Confirming <span class="confirmed-badge badge-pending">' + confs + ' conf</span>';
+    statusEl.className = 'stat-value amber';
+  } else {
+    statusEl.innerHTML = 'Confirmed <span class="confirmed-badge badge-confirmed">✓</span>';
+    statusEl.className = 'stat-value';
+  }
+
+  /* Confirmations */
+  document.getElementById('rConfirmations').textContent = confs.toLocaleString();
+
+  /* Block height */
+  const bh = tx.block_height;
+  document.getElementById('rBlockHeight').textContent = (bh != null && bh > 0) ? bh.toLocaleString() : 'Mempool';
+
+  /* Timestamp */
+  const ts = tx.confirmed || tx.received;
+  document.getElementById('rTime').textContent = ts ? formatDate(ts) : '—';
+
+  /* Total value */
+  const total = tx.total != null ? tx.total : sumOutputs(tx);
+  document.getElementById('rTotal').textContent = formatValue(total, cfg);
+
+  /* Fee */
+  document.getElementById('rFee').textContent = tx.fees != null ? formatValue(tx.fees, cfg) : '—';
+
+  /* Size */
+  const size = tx.size || tx.vsize || null;
+  document.getElementById('rSize').textContent = size ? size.toLocaleString() : '—';
+
+  /* I/O counts */
+  const inCount  = (tx.inputs  || []).length;
+  const outCount = (tx.outputs || []).length;
+  document.getElementById('rIO').textContent = `${inCount} / ${outCount}`;
+
+  /* Inputs list */
+  renderIOList('inputsList',  tx.inputs  || [], cfg, 'input');
+  renderIOList('outputsList', tx.outputs || [], cfg, 'output');
+
+  /* Raw JSON */
+  document.getElementById('rawPre').textContent = JSON.stringify(tx, null, 2);
+
+  /* Reset raw toggle */
+  const rawContent = document.getElementById('rawContent');
+  const rawToggle  = document.getElementById('rawToggle');
+  rawContent.classList.remove('open');
+  rawToggle.classList.remove('open');
+
+  showResults();
+}
+
+function renderIOList(containerId, entries, cfg, type) {
+  const el = document.getElementById(containerId);
+  if (!entries.length) { el.innerHTML = '<div class="muted" style="font-size:0.76rem">None</div>'; return; }
+
+  el.innerHTML = entries.map(entry => {
+    let addrHtml;
+    if (type === 'input') {
+      if (entry.coinbase) {
+        addrHtml = '<span class="io-addr coinbase">Coinbase (new coins)</span>';
+      } else {
+        const addr = getAddress(entry);
+        addrHtml = `<span class="io-addr">${esc(addr)}</span>`;
+      }
+    } else {
+      const addr = getAddress(entry);
+      const spent = entry.spent_by ? ' <span class="muted" title="Spent">[spent]</span>' : '';
+      addrHtml = `<span class="io-addr">${esc(addr)}</span>${spent}`;
+    }
+
+    const val = entry.output_value ?? entry.value ?? null;
+    const valHtml = val != null
+      ? `<span class="io-value">${formatValue(val, cfg)}</span>`
+      : '<span class="muted io-value">—</span>';
+
+    return `<div class="io-entry">${addrHtml}${valHtml}</div>`;
+  }).join('');
+}
+
+/* ── Helpers ────────────────────────────────────────────────────────── */
+function getAddress(entry) {
+  if (entry.addresses && entry.addresses.length) return entry.addresses[0];
+  if (entry.address) return entry.address;
+  if (entry.script) return '[script]';
+  return '[unknown]';
+}
+
+function formatValue(satoshis, cfg) {
+  if (satoshis == null) return '—';
+  const val = satoshis / cfg.divisor;
+  const dec = cfg.divisor >= 1e8 ? 8 : 6;
+  return val.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: dec }) + ' ' + cfg.unit;
+}
+
+function formatDate(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toUTCString().replace('GMT', 'UTC');
+  } catch { return iso; }
+}
+
+function sumOutputs(tx) {
+  return (tx.outputs || []).reduce((s, o) => s + (o.value ?? 0), 0);
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+/* ── UI state helpers ───────────────────────────────────────────────── */
+function setStatus(state, msg) {
+  const dot  = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  dot.className  = 'status-dot ' + state;
+  text.textContent = msg;
+}
+
+function showLoading(show) {
+  document.getElementById('loadingBox').style.display = show ? 'block' : 'none';
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideError() { document.getElementById('errorBox').style.display = 'none'; }
+
+function showResults()  { document.getElementById('resultSection').style.display = 'block'; }
+function hideResults()  { document.getElementById('resultSection').style.display = 'none'; }
+
+function clearResults() { hideResults(); hideError(); }
+
+function clearAll() {
+  document.getElementById('hashInput').value = '';
+  clearResults();
+  setStatus('', 'READY — SELECT A NETWORK AND ENTER A TRANSACTION HASH');
+  document.getElementById('statusDot').className = 'status-dot';
+}
+
+function toggleRaw() {
+  const content = document.getElementById('rawContent');
+  const toggle  = document.getElementById('rawToggle');
+  content.classList.toggle('open');
+  toggle.classList.toggle('open');
+}
+</script>
+</body>
+</html>
